@@ -1,7 +1,7 @@
 # AEMM
 Allumage Electronique Arduino michelm
 
-Ce projet est un allumage électronique programmable cartographique pour moto ou automobile ancienne, il est dévellopé pour utiliser un Arduino (Uno ou Nano V3).
+Ce projet est un allumage électronique programmable cartographique pour moto ou automobile ancienne, il est développé pour utiliser un Arduino (Uno ou Nano V3).
 
 ATTENTION il est toujours possible d'être modifié, amélioré, et si vous l'utilisez je dégage toute responsabilité de son utilisation, c'est à vos risques et périls je ne saurais être responsable des désagréments, incidents, accidents qu'il pourrait occasionner !!
 Merci de votre compréhension, c'est un travail d'amateur pas d'une société commerciale.
@@ -26,7 +26,7 @@ Plusieurs courbes d'avance à dépression sont aussi possibles.
 Il y a également une sortie pour une LED de contrôle de la charge batterie.
 
 A noter que l'AEMM permet l'utilisation de bobine d'allumage moderne à faible résistance (bobine crayon auto par exemple), le dwell (temps de charge bobine) est variable en fonction de la tension batterie suivant une courbe type Bosch. 
-Il convient de vérifier le temps de charge bobine suivant son utilisation. Il y a un risque de bruler une bobine d'allumage à très faible résistance primaire si le temps de charge bobine n'est pas adapté.
+Il convient de vérifier le temps de charge bobine suivant son utilisation. Il y a un risque de brûler une bobine d'allumage à très faible résistance primaire si le temps de charge bobine n'est pas adapté.
 Pour une bobine "ancienne" ou à résistance élevée, de quelques ohms (3 ou 4)  on peut mettre un temps relativement long sans crainte. Cependant il est inutile de la saturer en permanence, sa durée de vie pourrait en être écourtée.
 Il y a de nombreux commentaires avec le code pour aider à la compréhension.
 
