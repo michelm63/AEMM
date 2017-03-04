@@ -1,0 +1,397 @@
+#include <TimerOne.h>                             // Génère une interruption toutes les TchargeBob ou DsecuBob µs
+
+//**************************************************************
+                                                  // Version dérivée des AEPL & AECP  Nano. Allumage électronique programmable - Arduino
+char ver[] = "AEMM version simple du 04-03-17 ";  // MM cette version n'utilise que le début de cible à 60° (angle capteur), cible plus facile à réaliser
+                                                  // MM allumage à 0° d'avance au démarrage au kick (pas de fin de cible au PMH), Temps d'avance calculé jusqu'à Ndem
+                                                  // MM avance fixe entre Ndem et Nplancher à 5° et temps de charge bobine plus régulier qu'avant (correction)
+                                                  // MM temps de charge bobine fixe mais stable sur toute la plage de régime
+                                                  // LED de calage statique de l'allumage
+                                                  // MM version simplifiée sans correction de l'avance (commutateur en roulant, dépression) ni multi-étincelles, ni multi-courbes
+
+
+//**************************************************************
+
+// Si on passe à 1 un de ces Debug on peut lire les valeurs lors du déroulement du programme, mais il est ralenti pas ces lectures donc ne pas laisser à 1 pour le fonctionnement normal
+
+#define Debug_CalculT 0        // Lire T dans CalculD
+#define Debug_CalculD 0        // Lire D dans CalculD
+#define Debug_Tloop 0          // Lire T dans Loop
+#define Debug_Davant_TchargeBob 0 // Lire temps avant recharge bobine 
+#define Debug_printMM 1        // Sortie série N régime et Av avance (peut servir avec PC, ou Smartphone, ou Tablette, pour lire régime moteur et avance)
+
+// Si on ajoute pc(nom_de_la_variable) dans une ligne du programme, il s'arrête en donnant la valeur de cette variable (ex pc(T), pc(D) etc.)  et continue si on met un caractère et "envoyer"
+#define pc(v) Serial.print("Ligne_") ; Serial.print(__LINE__) ; Serial.print(" ; ") ; Serial.print(#v) ; Serial.print(" = ") ; Serial.println((v)) ; Serial.println(" un caractère "a" par exemple et 'Envoyer' pour continuer") ; while (Serial.available()==0);{ int k_ = Serial.parseInt() ;}
+
+
+
+//**************  Seulement  5 lignes à renseigner obligatoirement.****************
+//**********Ce sont:  Na  Anga  Ncyl  AngleCapteur  CaptOn ******************
+
+int Na[] = {0, 500, 600, 700,  800,  900, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 6800, 7000, 0};    // tr/mn vilo
+int Anga[] = {0, 5,  8,  12,   12,    8,   12,   20,   22,   24,   28,   28,   28,   28,    5,  0};    // Avance en degré
+                                // Na[] et Anga[] doivent obligatoirement débuter puis se terminer par  0, et  contenir des valeurs  entières >=1
+                                // Le dernier Na fixe la ligne rouge, c'est à dire la coupure de l'allumage.
+                                // Le nombre de points est libre. L'avance est imposée à 0° entre 0 et Nplancher t/mn
+                                // Anga [] degrés d'avance vilebrequin correspondant ( peut croitre ou decroitre)
+
+int Ncyl = 2;                   // Nombre de cylindres, moteur 4 temps.Multiplier par 2 pour moteur 2 temps
+const int AngleCapteur = 60;    // Position en degrès avant le PMH du capteur (Hall ou autre).
+const int CaptOn = 1;           // CapteurOn = 1 déclenchement sur front montant (par ex. capteur Hall "saturé")
+                                // CapteurOn = 0 déclenchement sur front descendant (par ex. capteur Hall "non saturé").Voir fin du listing
+   //************************************************************************************
+  
+   // Valable pour tout type de capteur soit sur vilo soit dans l'allumeur (ou sur l'arbre à came)
+   // Pour N cylindres,2,4,6,8,12,16, 4 temps, on a N cames d'allumeur ou  N/2 cibles sur le vilo
+   // Pour les moteurs à 1, 3 ou 5 cylindres, 4 temps, il FAUT un capteur dans l'allumeur (ou sur
+   // l'arbre à cames, c'est la même chose)
+   // Exception possible pour un monocylindre 4 temps, avec  capteur sur vilo et une cible:on peut génèrer
+   // une étincelle perdue au Point Mort Bas en utilisant la valeur Ncyl =2.
+   // Avance 0°jusqu'a Nplancher t/mn, anti retour de kick.
+
+   //************Ces valeurs sont eventuellement modifiables*****************
+                                 // Ce sont Nplancher, TchargeBob , DsecuBob, Ndem
+int Ndem = 150;                              // Vitesse estimée du moteur entrainé par le demarreur électrique en t/mn, seuil allumage instantané au PMH
+const int Nplancher = 500;                   // vitesse en t/mn jusqu'à laquelle l'avance est fixe à 5°, doit être supérieur à Ndem, au-dessus l'avance est celle programmée et avec correction
+const unsigned long DsecuBob = 1000000;      // Sécurite: bobine coupée après "DsecuBob" en µs, MM normalement n'entre jamais en action
+
+const int TchargeBob = 7000;                 // temps de recharge bobine nominal pour 14,5 V batterie, ex 5 ms à 14,5 V U batterie pour bobine Bosch crayon (mesuré sur Clio 1.6L 16S)
+
+    //***********************Variables du sketch************************************
+const int Bob = 4;       // Sortie D4 vers bobine.En option, on peut connecter une Led avec R=330ohms vers la masse
+const int Cible = 2;     // Entrée sur D2 du capteur, R PullUp
+const int Led = 13;      // Sortie D13 avec la led built-in (interne sur l'Arduino Nano) pour caller le disque par rapport au capteur
+
+float modC1 = 0;         // Correctif pour C1[], deplace la courbe si potard connecté
+unsigned long D = 0;     // Délai en µs à attendre après la cible pour l'étincelle // MM pas de int
+unsigned long DfixeKick = 0;        // D fixe démarrage au kick sous Ndem
+unsigned long Dfixe = 0;            // D fixe entre Ndem et Nplancher
+byte AngAvfixeKick = 0;             // MM angle d'avance fixe démarrage au kick sous Ndem
+byte AngAvfixe = 5;                 // MM angle d'avance fixe entre Ndem et Nplancher
+int milli_delay = 0;
+int micro_delay = 0;
+float  Tplancher = 0;    // Seuil pour régime plancher
+
+int tcor = 170;          // correction en µs du temps de calcul pour D, MM vérifié à l'oscillo 04/03/2017
+
+unsigned long Tseuil = 0;            // T seuil pour correction du TchargeBob à bas régime, ce seuil est fonction de Tcharge Bobine et est calculé dans Init
+unsigned long Davant_TchargeBob = 0; // Delai en µs avant la recharge de la  bobine. // MM pas de int
+unsigned long Tprec = 0;             // Période précédant la T en cours, pour calcul de TchargeBob
+unsigned long prec_H = 0;            // Heure du front precedent en µs
+unsigned long T = 0;                 // Periode en cours
+
+int N1 = 0;             // Couple N,Ang de debut d'un segment
+int Ang1 = 0;           // Angle d'avance vilo en degrès
+int N2 = 0;             // Couple N,Ang de fin de segment
+int Ang2 = 0;
+int*  pN = &Na[0];      // pointeur au tableau des régimes. Na sera la courbe par defaut
+int*  pA = &Anga[0];    // pointeur au tableau des avances. Anga sera la  courbe par defaut
+float k = 0;            // Constante pour calcul de C1 et C2
+float C1[20];           // Tableaux des constantes de calcul de l'avance courante
+float C2[20];           // Tableaux des constantes de calcul de l'avance courante
+float Tc[20];           // Tableau des Ti correspondants au Ni
+                        // Si necessaire, augmenter ces 3 valeurs:Ex C1[30],C2[30],Tc[30]
+int Tlim = 0;           // Période minimale, limite, pour la ligne rouge (régime moteur maximum autorisé)
+int j_lim = 0;          // index maxi des N , donc aussi  Ang
+
+unsigned long NT = 0;   // Facteur de conversion entre N et T à Ncyl donné
+
+int AngleCibles = 0;        // Angle entre 2 cibles, 180° pour 4 cyl, 120° pour 6 cyl, par exemple
+int UneEtin = 1;            // = 1 pour chaque étincelle, testé et remis à zero par isr_GestionIbob()
+
+unsigned long Tdem = 0;     // Periode correspondante à Ndem,forcée pour le premier tour
+                                  
+unsigned long Vitesse = 0;          // vitesse en cours                                      
+unsigned long Delaideg = 0;         // µs/deg                        
+                                    // Tableau pour sauver des données temporelles
+unsigned long Stop_temps_Etincelle = 0;          // MM ajout de = 0              
+unsigned long Tempsecoule = 0;                   //                     
+float AvanceMoteur = 0;
+int fxAvanceMoteur = 0;
+unsigned int fxAvanceMoteur2 = 0;                                 
+
+
+                  //********************* INITIALISATION *********************
+                  
+void setup()///////////////
+{
+  Serial.begin(115200);     // Ligne suivante, 3 Macros du langage C
+  Serial.println(__FILE__); Serial.println(__DATE__); Serial.println(__TIME__);
+  Serial.println(ver);
+  
+  pinMode(Cible, INPUT_PULLUP);    // Entrée capteur sur D2 
+  pinMode(Bob, OUTPUT);            // Sortie sur D4 controle du courant dans la bobine (vers transistor IGBT)
+  pinMode(Led, OUTPUT);            // pour signaler le calage du capteur lors de la mise au point
+  
+  Init();                          // Exécutée une fois au démarrage
+}
+
+                  
+void Init ()/////////////
+                               // Calcul de 3 tableaux,C1,C2 et Tc qui serviront à calculer D, temps d'attente
+                               // entre la détection d'une cible par le capteur  et la génération de l'étincelle.
+                               // Le couple C1,C2 est determiné par la période T entre deux cibles, correspondant au
+                               // bon segment de la courbe d'avance entrée par l'utilisateur: T est comparée à Tc
+{ AngleCibles = 720 / Ncyl;    // Cibles sur vilo. Ex pour 4 cylindres 180°,  120° pour 6 cylindres
+  NT  = 120000000 / Ncyl;      // Facteur de conversion Nt/mn moteur, T µs entre deux PMH étincelle
+                               // c'est à dire deux cibles sur vilo (arbre moteur) ou deux cames d'allumeur
+                               // T temps entre 2 étincelles soit 720°  1° = 1/6 N
+                               
+  Tdem  = NT / Ndem;           // Période imposée à la première étincelle qui n'a pas de valeur prec_H
+  
+  Tplancher = 120000000 / Nplancher / Ncyl;   // T à vitesse plancher en t/mn: en dessous, avance = 0
+ 
+  N1  = 0; Ang1 = 0;           // Toute courbe part de  0
+  int i = 0;                   // locale mais valable hors du FOR
+  pN++; pA++;                  // sauter le premier element de tableau, toujours = 0
+  for (i  = 1; *pN != 0; i++)  // i pour les C1, C2 et Tc. Arrêt quand régime = 0.
+                               // pN est une adresse (pointeur) qui pointe au tableau N. Le contenu pointé est *pN
+                               
+  { N2 = *pN; Ang2 = *pA;      // recopier les valeurs pointées dans N2 et Ang2
+    k = float(Ang2 - Ang1) / float(N2  - N1);  // pente du segment (1,2)
+    
+    C1[i] = float(AngleCapteur - Ang1 + k * N1) / float(AngleCibles);
+    C2[i] = - float(NT * k) / float(AngleCibles);                   // 
+    Tc[i] = float(NT / N2);                                         //
+    N1 = N2; Ang1 = Ang2;                                           // fin de ce segment, début du suivant
+    pN++; pA++;                                                     // Pointer à l'élement suivant de chaque tableau
+    
+    }
+    j_lim = i - 1;                         // Revenir au dernier couple entré
+    Tlim  = Tc[j_lim];                     // Ligne rouge  
+                                           // Timer1 a deux roles:
+                                           // 1) couper le courant dans la bobine en l'absence d'étincelle pendant plus de Dsecu µs // MM pas utile ici
+                                           // 2) après une étincelle, attendre le délai Drech avant de rétablir le courant dans la bobine
+                                           // Ce courant n'est rétabli que trech ms avant la prochaine étincelle, condition indispensable
+                                           // pour une bobine à faible résistance, disons inférieure à 3 ohms. Typiquement trech = 3ms à 7ms
+  Timer1.attachInterrupt(isr_GestionIbob); // IT d'overflow de Timer1 (16 bits)
+  digitalWrite(Bob, 0);                    // par principe, couper la bobine
+
+  Tseuil = ((TchargeBob / 1000) * 991) + 65473;     // MM Calcul du seuil de correction TchargeBob, sous ce seuil TchargeBob est modifié jusqu'au seuil bas de Ndem
+}
+
+
+                  //********************LES FONCTIONS*************************
+
+void CalcD ()      ////////////////// Calcul du temps D entre top capteur à 60° et étincelle d'allumage
+{                                        // Noter que T1>T2>T3...
+ for (byte j = 1; j <= j_lim; j++)       // On commence par T la plus longue et on remonte
+  {
+
+///////////////////////// Debug_CalculT //////////////////
+   if ( Debug_CalculT) {
+       Serial.print(" ; T = ");  Serial.println(T);
+   }
+//////////////////////////////////////////////////////// 
+    
+    if  (T >=  Tc[j]) {                  // on a trouvé le bon segment de la courbe d'avance
+
+      D = float(T * ( C1[j] - modC1 )  + C2[j]) - tcor;  // D en µs, tcor appliqué ici donne de meilleurs résultats niveau précision
+
+///////////////////////// Debug_CalculD //////////////////
+   if ( Debug_CalculD) {
+       Serial.print(" ; D = ");  Serial.println(D);
+   }
+//////////////////////////////////////////////////////// 
+
+  if (D < 6500) {            // delay maxi à ne pas dépasser 16383 µs, risque de temps totalement incorrect
+    delayMicroseconds(D);    // Attendre D }
+  }
+  else {
+    milli_delay = ((D / 1000) - 2);           // Pour ces D longs, delayMicroseconds(D) ne va plus, on convertit
+    micro_delay = (D - (milli_delay * 1000)); // en mili et micro secondes
+    delay(milli_delay); //
+    delayMicroseconds(micro_delay);
+      }
+      break;                            // Sortir, on a D
+    }
+  }
+}
+
+
+void  D_FixeKick()   ////////// D fixe temps entre top capteur et allumage, démarrage au kick sous Ndem
+{
+ Dfixe = (T * (AngleCapteur - AngAvfixeKick) / 360) - TchargeBob;  // MM D fixe avec avance fixe à 0° sous Ndem
+                                                                   // MM permet un meilleur contrôle du temps de charge bobine à régime faible
+  milli_delay = ((Dfixe/1000)-2);             // Quand Dfixe > 10ms car problèmes avec delayMicroseconds(D) si Dfixe > 14ms Dfixe devient très grand !!!
+  micro_delay = (Dfixe-(milli_delay*1000));   // 
+  delay(milli_delay);                         // La plus grande valeur ne doit pas dépasser 16383 µs
+  delayMicroseconds(micro_delay); 
+}
+
+
+void  D_Fixe()   ////////// D fixe temps entre top capteur et allumage à bas régime entre Ndem et Nplancher
+{
+ Dfixe = (T * (AngleCapteur - AngAvfixe) / 360) - TchargeBob;      // MM D fixe avec avance fixe à par exemple 5° entre Ndem et Nplancher Dfixe de 55,55 ms à 6666,667 ms
+                                                                   // MM permet un meilleur contrôle du temps de charge bobine à régime faible
+  milli_delay = ((Dfixe/1000)-2);             // Quand Dfixe > 10ms car problèmes avec delayMicroseconds(D) si Dfixe > 14ms Dfixe devient très grand !!!
+  micro_delay = (Dfixe-(milli_delay*1000));   // 
+  delay(milli_delay);                         // La plus grande valeur ne doit pas dépasser 16383 µs
+  delayMicroseconds(micro_delay); 
+}
+
+
+void Etincelle ()    ////////// Coupure de la bobine pour créer l'étincelle d'allumage
+{ 
+  digitalWrite(Bob, 0);               // Couper le courant, donc étincelle
+                                      // Maintenant que l'étincelle est émise, il faut rétablir Ibob au bon moment
+  Stop_temps_Etincelle = micros();    // MM Calcul des temps
+
+  if (T <= Tdem && T >= Tseuil)       // MM le seuil est mesuré à l'oscilloscope et calculé en fonction du Temps de charge Bobine programmé
+  {
+   Davant_TchargeBob =  T - TchargeBob + (TchargeBob * 0.23); // MM Temps avant recharge de la bobine correction + 23 % entre Ndem et 876 tr/mn
+  }
+  else                                                        // MM sinon calcul sans correction pour les autres régimes moteur, le temps est correct
+  {
+    Davant_TchargeBob = 2 * T - Tprec - TchargeBob;           // Tenir compte des variations de régime moteur
+  }
+//  Davant_TchargeBob =  T - TchargeBob;                        // MM essai sans tenir compte variation de régime moteur (peu de différence)
+//  }
+
+///////////////////////// Debug_Davant_TchargeBob //////////////////
+   if ( Debug_Davant_TchargeBob) {
+       Serial.print(" ; Davant_TchargeBob = ");  Serial.println(Davant_TchargeBob);
+   }
+//////////////////////////////////////////////////////// 
+
+
+  Timer1.initialize(Davant_TchargeBob);       // Attendre Davant_TchargeBob µs avant de rétablir le courant dans la bobine
+
+  UneEtin = 1;    // Pour signaler que le moteur tourne à l'isr_GestionIbob().
+}
+
+void Etincelle_Immediate()////////// Allumage instantané au démarrage au kick, à très faible régime
+{ 
+  digitalWrite(Bob, 1);
+  delayMicroseconds(TchargeBob);  
+  digitalWrite(Bob, 0);               // Couper le courant, donc étincelle
+  Stop_temps_Etincelle = micros();    // MM Calcul des temps
+}
+
+
+
+void isr_GestionIbob()     ////////// Gestion du moment d'alimenation de la bobine
+
+{ Timer1.stop();              // Arrêter le décompte du timer
+  if (UneEtin == 1 && T > Tlim) {        // Si il y a eu une étincelle (fonction Etincelle) MM essai: ET régime moteur inférieur à régime maxi 
+    digitalWrite(Bob, 1);     // Le moteur tourne, rétablir le courant dans bobine
+  }
+  else
+  { digitalWrite(Bob, 0);    // Sinon on a moteur arrêté, préserver la bobine, couper le courant
+  }
+  UneEtin = 0;               // Remet le détecteur d'étincelle à 0
+  Timer1.initialize(DsecuBob);  // Au cas où le moteur s'arrête, couper la bobine après Dsecu µs
+}
+
+
+void loop()   //////////////// Attendre les tops capteur pour générer l'allumage
+{  
+  while (digitalRead(Cible) == CaptOn);     // Attendre début de la cible 
+  T = micros() - prec_H;                    // front actif est arrivé : calculer T
+  prec_H = micros();                        // heure du front actuel qui deviendra le front précédent
+
+  digitalWrite(Led,HIGH);                   // MM Allumage Led de calage statique tant que la cible est présente, et extinction en fin de cible donc à 0° Point Mort Haut moteur
+  
+///////////////////////// Debug_Tloop //////////////////
+   if ( Debug_Tloop) {
+       Serial.print(" ; Tloop = ");  Serial.println(T);
+   }
+//////////////////////////////////////////////////////// 
+
+
+  if (T >= Tdem)                                 // Si le régime est inférieur au régime Ndem, démarrage au kick
+  {
+    D_FixeKick();                                // Avance fixe kick à 0° sous le régime Ndem
+    Etincelle_Immediate();                       // Etincelle immédiate et multiple    
+  }
+    
+  if (T < Tdem && T > Tplancher)                 // Si le régime moteur est au dessus du régime de démarrage électrique et sous le régime plancher
+  { 
+    D_Fixe();                                    // Avance fixe entre Ndem et Nplancher
+    Etincelle_Immediate();                       // Etincelle immédiate et multiple
+  }
+    
+  if (T <= Tplancher && T > Tlim)                // Si le régime moteur est au dessus du régime plancher et sous le régime maxi (zone rouge)
+  { 
+    CalcD();                                     // calcul du temps d'attente entre début de la cible et l'allumage
+    Etincelle();                                 // Etincelle d'allumage
+  }
+
+  if (T <= Tlim)                                 // Si le régime moteur est égal ou supérieur au régime maxi (zone rouge)
+  {
+   digitalWrite(Bob, 0);                        // Préserver la bobine, couper le courant immédiatement au régime maxi sans attendre Dsecu de 1 sec
+  }
+
+  while (digitalRead(Cible) == !CaptOn);         // Attendre fin de la cible au PMH à 0°
+ 
+  Tprec = T;                                      // Sauve la valeur de T en cas de perte d'info du capteur
+
+//  if (T >= Tdem) {Etincelle_Immediate();}        // MM étincelle immédiate multiple si sous le régime de démarrage (au démarreur électrique) et fin de la cible aimantée à 0° au PMH du moteur
+
+  digitalWrite(Led,LOW);                         // MM extinction Led de calage statique
+
+
+        /////////// MM Informations envoyées vers le port série pour lecture du régime moteur, de l'avance à l'allumage.
+
+///////////////////////// Debug_printMM //////////////////
+if (Debug_printMM) {
+  Vitesse = (NT / T) * 1.001;                            // MM calcul de la vitesse (régime moteur), avec correction d'erreur 0.001
+  Delaideg = NT / Vitesse / float(AngleCibles);          // MM calcul du délai en degrés
+  
+  float Tempsecoule = Stop_temps_Etincelle - prec_H;                // MM calcul du temps entre étincelle et le top capteur, type float pour avoir chiffre après la virgule et afficher avance négative sous Ndem
+  AvanceMoteur = (AngleCapteur - (Tempsecoule / Delaideg)) * 1.01;  // MM calcul avance totale à l'allumage du moteur, avance moteur doit être du type float, correction 1.01
+  fxAvanceMoteur = 10 * AvanceMoteur;                      // MM 
+  if (fxAvanceMoteur > 0)
+  {fxAvanceMoteur2 = fxAvanceMoteur%10;}
+  else {fxAvanceMoteur2 = -(fxAvanceMoteur%10);}
+  
+  Serial.print(" ; N = ");         // MM régime moteur N  
+  Serial.print(Vitesse);           // MM régime moteur N
+  Serial.print(" ; Av =  ");       // MM avance
+  if (AvanceMoteur < -360 || AvanceMoteur > 360) 
+  {Serial.println("All HS");}      // MM si l'avance est hors limite afficher : All HS
+  else {
+  Serial.print(fxAvanceMoteur/10);// MM partie entière de l'avance
+  Serial.print(",");              // MM virgule fixe
+  Serial.println(fxAvanceMoteur2);// MM modulo partie après la virgule fixe
+  }    
+ }
+/////////////////////////////////////////////////////////
+  
+}
+
+
+/////////////////Exemples de CAPTEURS/////////////////
+//Capteur Honeywell cylindrique 1GT101DC,contient un aimant sur le coté,type non saturé, sortie haute à vide,
+//et basse avec une cible en acier. Il faut  CapteurOn = 0, declenchement sur front descendant.
+//Le capteur à fourche SR 17-J6 contient un aimant en face,type saturé, sortie basse à vide,
+//et haute avec une cible en acier. Il faut  CapteurOn = 1, declenchement sur front montant.
+
+//Pour les Ncyl pairs:2,4,6,8,10,12, le nombre de cibles réparties sur le vilo est Ncyl/2
+//Dans les deux cas (capteur sur vilo ou dans l'alumeur) la période entre deux cibles et la même car l'AàC tourne à Nvilo/2
+//Pour les Ncyl impairs 1,3 5, 7?,9? il FAUT un capteur dans l'alumeur (ou AàC)
+
+////////////////DEBUGGING////////////////////////
+//Macro  ps(v) de debug pour imprimer le numero de ligne, le nom d'une variable, sa valeur
+//puis s'arreter definitivement
+//#define ps(v) Serial.print("Ligne_") ; Serial.print(__LINE__) ; Serial.print(#v) ; Serial.print(" = ") ;Serial.println((v)) ; Serial.println("  Sketch stop"); while (1);
+//Exemple, à la ligne 140, l'instruction     ps(var1);
+//inprimera  "Ligne_140var1 = 18  Sketch stop"
+//Macro  pc(v)de debug pour imprimer le numero de ligne, le nom d'une variable, sa valeur,
+//puis s'arreter et attendre un clic de souris  sur le bouton 'Envoyer'en haut de l'ecran seriel pour continuer.
+//#define pc(v) Serial.print("Ligne_") ; Serial.print(__LINE__) ; Serial.print(#v) ;Serial.print(" = ") ; Serial.println((v)) ; Serial.println(" Clic bouton 'Envoyer' pour continuer") ;while (Serial.available()==0);{ int k_ = Serial.parseInt() ;}
+//Exemple, à la ligne 145, l'instruction    pc(var2);
+// inprimera   "Ligne_145var2 = 25.3   Clic bouton 'Envoyer' pour continuer"
+//float gf = 0;//pour boucle d'attente,gf  GLOBALE et FLOAT indispensable
+//  gf = 1; while (gf < 2000)gf++;//10= 100µs,100=1.1ms,2000=21.8ms
+//void  Top()//////////
+//{ digitalWrite(Bob, 1); //Crée un top sur l'oscillo
+//  gf = 1; while (gf < 10)gf++;//gf DOIT être Globale et Float 10=100µs,2000=21.8ms, retard/Cible=50µs
+//  digitalWrite(Bob, 0); //
+//}
+//void software_Reset()  //jamais testé
+// Redémarre le programme depuis le début mais ne
+// réinitialiser pas les périphériques et les registresivre...
+//{
+//  asm volatile ("  jmp 0");
+//}
