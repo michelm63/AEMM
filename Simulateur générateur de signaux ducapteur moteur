@@ -1,0 +1,80 @@
+// MM générateur de créneaux à fréquence variable pour tester l'allumage électronique Arduino (simulation du capteur à effet Hall du moteur)
+// MM la génération peut-être limitée à quelques tours (impulsions) pour simuler un "DEMARRAGE" ou être "PERMANENT" à fréquence fixe
+// MM la fréquence peut aller en croissant pour simuler l'augmentation de régime au démarrage
+
+const int BP = 2;                // Entrée bouton poussoir pour mise en route en D2
+const int DemPer = 3;            // Choix entre simulation de Démarrage sur quelques tours ou Permanent Fréquence fixe en D3
+const int Gene = 13;             // Sortie générateur BF en D13
+const int Nbtour = 3;            // N de tours au démarrage *************** A DEFINIR ******************
+const int Cible = 72;            // Angle de la cible en ° (0 à 360° vilebrequin)  *************** A DEFINIR ******************
+const int Pas = 30;              // Pas d'augmentation de la Fréquence à chaque tour (F de 10 à 800) en mode DEMARRAGE
+
+float F = 0;                     // Entrée analogique tension variable pour variation de fréquence
+float f = 0;                     // Valeur de f variable
+int C = 0;                       // C comptage nombre de tour ou impulsion
+float ValeurF = 0;               // Valeur de la Fréquence
+int ValeurBP = 0;                // Valeur état du BP  
+int ValeurDemPer = 0;            // Valeur Démmarrage ou Permanent     
+
+float  Etat1 = 0;    // Délai en ms à l'état 0 variable en fonction de la fréquence
+float  Etat0 = 0;    // Délai en ms à l'état 1 variable en fonction de la fréquence
+
+void setup() {
+  
+   Serial.begin(115200); 
+
+   pinMode(BP, INPUT_PULLUP); // Entrée bouton poussoir pour faire fonctionner le générateur de créneaux, par défaut à 1
+   pinMode(DemPer, INPUT_PULLUP); // Entrée bouton poussoir pour faire fonctionner le générateur de créneaux en démarrage ou permanent, par défaut à 1   
+   pinMode(F, INPUT);         // Entrée tension du potentiomètre pour faire varier la fréquence de départ (régime de départ)
+   pinMode(Gene, OUTPUT);     // Sortie créneaux sur D13, simulation des impulsions du capteur d'allumage
+
+}
+
+void loop() {
+  
+   ValeurBP = digitalRead (BP);           // Lire si le BP est à 1 ou 0, mise en fonctionnement du simulateur ou arrêt et remise à 0
+   ValeurDemPer = digitalRead (DemPer);   // Lire si le choix est Démarrage ou Permanent est à 1 ou 0   
+   
+if (ValeurDemPer == 0)              // Choix générateur de Démarrage à 0 ****************** DEMARRAGE **********************
+   {
+   if (ValeurBP == 0) {             // Si BP à 0 remettre le nombre de tours ou impulsions à 0, le générateur est prêt à démarrer
+    C = 0;
+    ValeurF = analogRead (A0);      // Lire la valeur de tension en sortie du potentiomètre, valeur de F de départ avant augmentation
+    F = map(ValeurF,0,1023,10,800); // La fréquence en 1/10 Hz,ou le régime moteur simulé est fonction de la tension de sortie du potentiomètre d'environ 120 à 7200 tr/mn
+   }
+ 
+   if (ValeurBP == 1 && C <= Nbtour) {   // Si BP est à 1 et C inférieur ou égal à Nb de tours au démarrage, on envoie des impulsions
+    C ++;                               // Augmenter C à chaque boucle
+
+  Etat0 = ((360 - Cible)*20 / F);  // Etat à 0 dure 1/F en ms cible absente pendant (360° - Cible) x20 pour avoir la durée en ms
+  Etat1 = ((Cible*20) / F);        // Etat à 1 dure 1/F en ms cible présente
+  
+  digitalWrite(Gene,1);           // Création des créneaux simulant la cible
+  delay(Etat1);
+  digitalWrite(Gene,0);   
+  delay(Etat0);  
+
+  F = F + Pas;                    // Augmenter F pour simuler une accélération de régime
+}
+  else {                          // Sinon la sortie est à 0
+  digitalWrite(Gene,0);
+  digitalWrite(Gene,0);
+}
+  }
+
+  else                             // Sinon choix générateur Permanent **************** PERMANENT ******************
+  {
+   ValeurF = analogRead (A0);      // Lire la valeur de tension en sortie du potentiomètre, valeur de F de départ avant augmentation
+   F = map(ValeurF,0,1023,10,800); // La fréquence en 1/10 Hz,ou le régime moteur simulé est fonction de la tension de sortie du potentiomètre d'environ 120 à 7200 tr/mn
+
+  Etat0 = ((360 - Cible)*20 / F);  // Etat à 0 dure 1/F en ms cible absente pendant (360° - Cible) x20 pour avoir la durée en ms
+  Etat1 = ((Cible*20) / F);        // Etat à 1 dure 1/F en ms cible présente
+  
+   digitalWrite(Gene,1);           // Création des créneaux simulant la cible
+   delay(Etat1);
+   digitalWrite(Gene,0);   
+   delay(Etat0);   
+  
+  }
+  
+}
