@@ -30,6 +30,8 @@ Il convient de vérifier le temps de charge bobine suivant son utilisation. Il y
 Pour une bobine "ancienne" ou à résistance élevée, de quelques ohms (3 ou 4)  on peut mettre un temps relativement long sans crainte. Cependant il est inutile de la saturer en permanence, sa durée de vie pourrait en être écourtée.
 Il y a de nombreux commentaires avec le code pour aider à la compréhension.
 
+Il y a aussi une version CDI, allumage à décharge de condensateur, cette version n'a pas besoin de gérer la charge des bobines ce qui simplifie le programme. Mais nécessite l'électronique de charge du condensateur d'allumage par exemple 2 uF à 300 V, la durée d'étincelle d'allumage étant plus courte il est utile de faire du multi-étincelles pour compenser, le circuit de charge du condensateur doit être le plus rapide possible.
+
 Merci de m'avoir lu et bon bricolage !
 
 
