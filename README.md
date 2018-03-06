@@ -16,7 +16,7 @@ http://a110a.free.fr/SPIP172/article.php3?id_article=142
 L'AECP m'a aussi servi d'inspiration, sa réalisation est également très intéressante :
 https://github.com/Totof34/aecp
 
-l'AEMM par rapport à l'AEPL, comporte une avance non calculée à très faible régime moteur, l'allumage ne se fait qu'au PMH , pour éviter toute possibilité de retour de kick pour une moto.
+l'AEMM par rapport à l'AEPL, comporte une avance non calculée à faible régime moteur, l'allumage ne se fait qu'au PMH , pour éviter toute possibilité de retour de kick pour une moto.
 Il n'y a pas d'allumage à la mise du contact, seulement si le moteur tourne.
 Il offre la possibilité de modifier l'avance en roulant avec un commutateur.
 Il permet l'allumage multi-étincelles jusqu'à environ 1500 tr/mn pour aider à un ralenti stable comme l'AEPL.
@@ -25,7 +25,6 @@ Il permet une correction d'avance par dépression ou ouverture des gaz comme l'A
 Plusieurs courbes d'avance à dépression sont aussi possibles.
 Il y a également une sortie pour une LED de contrôle de la charge batterie.
 
-A noter que l'AEMM permet l'utilisation de bobine d'allumage moderne à faible résistance (bobine crayon auto par exemple), le dwell (temps de charge bobine) est variable en fonction de la tension batterie suivant une courbe type Bosch. 
 Il convient de vérifier le temps de charge bobine suivant son utilisation. Il y a un risque de brûler une bobine d'allumage à très faible résistance primaire si le temps de charge bobine n'est pas adapté.
 Pour une bobine "ancienne" ou à résistance élevée, de quelques ohms (3 ou 4)  on peut mettre un temps relativement long sans crainte. Cependant il est inutile de la saturer en permanence, sa durée de vie pourrait en être écourtée.
 Il y a de nombreux commentaires avec le code pour aider à la compréhension.
